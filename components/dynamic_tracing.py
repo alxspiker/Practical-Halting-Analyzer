@@ -1,12 +1,16 @@
 import sys
-import re
+import re  # <-- Add this import
 from collections import defaultdict
 
 def dynamic_tracing(program: str) -> str:
     """Phase 3: Dynamic tracing to detect non-halting behavior."""
     try:
-        if "analyze_halting" in program:
-            return "does not halt"  # Self-referential call
+        # --- MODIFIED: Replace the blunt string search with a more precise regex ---
+        # This looks for 'analyze_halting' followed by an opening parenthesis '(',
+        # which is a much stronger signal of a function call than a simple substring.
+        # This prevents false positives on comments or variable names.
+        if re.search(r"analyze_halting\s*\(", program):
+            return "does not halt"  # Probable self-referential call
 
         trace_log = []
         call_depth = defaultdict(int)
@@ -43,7 +47,7 @@ def dynamic_tracing(program: str) -> str:
                 return "does not halt"
             else:
                 sys.settrace(None)
-                return "halts"  # Or "impossible to determine: {e}" if you prefer caution
+                return "halts"
         except Exception as e:
             sys.settrace(None)
             return "halts"  # Exceptions terminate execution
