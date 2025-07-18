@@ -1,16 +1,15 @@
 import sys
-import re  # <-- Add this import
+import re
 from collections import defaultdict
 
-def dynamic_tracing(program: str) -> str:
-    """Phase 3: Dynamic tracing to detect non-halting behavior."""
+def dynamic_tracing(program: str) -> tuple[str, str]:
+    """
+    Phase 3: Dynamic tracing to detect non-halting behavior.
+    Returns a tuple of (result, reason).
+    """
     try:
-        # --- MODIFIED: Replace the blunt string search with a more precise regex ---
-        # This looks for 'analyze_halting' followed by an opening parenthesis '(',
-        # which is a much stronger signal of a function call than a simple substring.
-        # This prevents false positives on comments or variable names.
         if re.search(r"analyze_halting\s*\(", program):
-            return "does not halt"  # Probable self-referential call
+            return "does not halt", "Dynamic tracing: Pre-execution check found a probable call to the analyzer."
 
         trace_log = []
         call_depth = defaultdict(int)
@@ -40,18 +39,19 @@ def dynamic_tracing(program: str) -> str:
             exec(program, {})
         except RecursionError:
             sys.settrace(None)
-            return "does not halt"
+            return "does not halt", "Dynamic tracing: Execution exceeded maximum recursion depth."
         except RuntimeError as e:
-            if "Cycle detected" in str(e) or "Trace log exceeded" in str(e):
-                sys.settrace(None)
-                return "does not halt"
+            sys.settrace(None)
+            if "Cycle detected" in str(e):
+                return "does not halt", "Dynamic tracing: Execution trace entered a deterministic loop."
+            elif "Trace log exceeded" in str(e):
+                return "does not halt", "Dynamic tracing: Execution exceeded maximum trace log size."
             else:
-                sys.settrace(None)
-                return "halts"
+                return "halts", f"Dynamic tracing: Execution terminated with a runtime error: {str(e)}."
         except Exception as e:
             sys.settrace(None)
-            return "halts"  # Exceptions terminate execution
+            return "halts", f"Dynamic tracing: Execution terminated with an exception: {type(e).__name__}."
         sys.settrace(None)
-        return "halts"
+        return "halts", "Dynamic tracing: Program executed to completion without issue."
     except Exception as e:
-        return f"impossible to determine: {str(e)}"
+        return "impossible to determine", f"Dynamic tracing: An internal error occurred: {str(e)}."

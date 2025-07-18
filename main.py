@@ -3,7 +3,6 @@ import sys
 import os
 from components.paradox_detection import detect_paradox
 from components.static_analysis import static_preparation
-# --- NEW: Import the heuristic classifier ---
 from components.heuristic_classifier import classify_known_problems
 from components.symbolic_prover import prove_termination
 from components.dynamic_tracing import dynamic_tracing
@@ -11,57 +10,65 @@ from components.decision_synthesis import decision_synthesis
 from components.cross_script_recursion import start_analysis, end_analysis, RecursionCycleDetected
 from components.semantic_hashing import get_semantic_hash
 
-# This function is now designed to be imported and used by other scripts.
-def analyze_halting(program: str) -> str:
-    """Analyze if a program halts using a multi-phase approach."""
+def analyze_halting(program: str) -> tuple[str, str]:
+    """
+    Analyze if a program halts using a multi-phase approach.
+    Returns a tuple of (result, reason).
+    """
     program_hash = get_semantic_hash(program)
 
     try:
         start_analysis(program_hash)
     except RecursionCycleDetected as e:
-        print(f"Debug: {str(e)}", file=sys.stderr)
-        return "does not halt"
+        reason = f"Meta-analysis: Cross-script recursion detected in cycle: {e}"
+        print(f"Debug: {reason}", file=sys.stderr)
+        return "does not halt", reason
 
     try:
         if detect_paradox(program):
-            print("Debug: Detected potential halting paradox", file=sys.stderr)
-            return "impossible to determine"
+            reason = "Phase 0: Detected a classic self-referential paradox structure."
+            print(f"Debug: {reason}", file=sys.stderr)
+            return "impossible to determine", reason
         
-        static_result = static_preparation(program)
+        static_result, static_reason = static_preparation(program)
         print(f"Debug: Static result = {static_result}", file=sys.stderr)
         if static_result in ["halts", "does not halt"]:
-            return static_result
+            return static_result, static_reason
         
-        # --- NEW: Add the heuristic classification phase ---
-        heuristic_result = classify_known_problems(program)
+        heuristic_result, heuristic_reason = classify_known_problems(program)
         print(f"Debug: Heuristic result = {heuristic_result}", file=sys.stderr)
         if heuristic_result == "impossible to determine":
-            return "impossible to determine"
+            return heuristic_result, heuristic_reason
 
-        prover_result = prove_termination(program)
+        prover_result, prover_reason = prove_termination(program)
         print(f"Debug: Prover result = {prover_result}", file=sys.stderr)
         if prover_result in ["halts", "does not halt"]:
-            return prover_result
+            return prover_result, prover_reason
         
-        dynamic_result = dynamic_tracing(program)
+        dynamic_result, dynamic_reason = dynamic_tracing(program)
         print(f"Debug: Dynamic result = {dynamic_result}", file=sys.stderr)
         if dynamic_result in ["halts", "does not halt"]:
-            return dynamic_result
+            return dynamic_result, dynamic_reason
         
+        # Phase 4: Decision Synthesis (as a fallback)
         final_result = decision_synthesis(static_result, prover_result, dynamic_result, program)
         print(f"Debug: Final result = {final_result}", file=sys.stderr)
-        return final_result
+        
+        if final_result == "does not halt":
+            reason = "Phase 4: Synthesis fallback detected a call to the analyzer."
+        else:
+            reason = "Phase 4: All analysis phases were inconclusive."
+            
+        return final_result, reason
         
     except Exception as e:
+        reason = f"An unexpected error occurred in the analysis pipeline: {str(e)}"
         print(f"Debug: Exception = {str(e)}", file=sys.stderr)
-        return f"impossible to determine: {str(e)}"
+        return "impossible to determine", reason
     finally:
         end_analysis(program_hash)
 
-# The __name__ == "__main__" block contains code that ONLY runs
-# when you execute `python main.py` directly.
 if __name__ == "__main__":
-    # --- NEW: Add command-line argument parsing ---
     parser = argparse.ArgumentParser(
         description="A practical halting analyzer for Python scripts.",
         formatter_class=argparse.RawTextHelpFormatter
@@ -93,12 +100,12 @@ if __name__ == "__main__":
             print("-" * (12 + len(script_name)))
             
             try:
-                # Use 'utf-8' encoding for better compatibility
                 with open(script_path, 'r', encoding='utf-8', errors='ignore') as f:
                     program_code = f.read()
                 
-                result = analyze_halting(program_code)
+                result, reason = analyze_halting(program_code)
                 print(f"Result: {result}")
+                print(f"Reason: {reason}")
                 print("-" * (12 + len(script_name)))
 
             except Exception as e:

@@ -7,7 +7,6 @@ from pathlib import Path
 import sys
 import argparse
 
-# --- MODIFIED: Import the analyzer function directly! ---
 from main import analyze_halting
 
 # --- Configuration ---
@@ -38,14 +37,12 @@ PROJECT_SCRIPTS_DIR = Path("scripts")
 # --- Helper Functions for Corpus Creation ---
 
 def create_directory(path: Path):
-    """Creates a directory if it doesn't exist."""
     path.mkdir(parents=True, exist_ok=True)
 
 def collect_stdlib():
     create_directory(STDLIB_DEST)
     stdlib_path = Path(shutil.__file__).parent
     print(f"Collecting files from stdlib at: {stdlib_path}")
-    # ... (rest of function is the same as your previous version)
     file_count = 0
     for root, _, files in os.walk(stdlib_path):
         for file in files:
@@ -59,11 +56,10 @@ def collect_stdlib():
 def download_and_unpack_pypi():
     create_directory(PYPI_DEST)
     print("Downloading PyPI packages...")
-    # ... (rest of function is the same as your previous version)
     try:
         subprocess.run([sys.executable, "-m", "pip", "download", "--no-deps", "--dest", str(PYPI_DEST), *PYPI_PACKAGES], check=True, capture_output=True)
     except subprocess.CalledProcessError as e:
-        print(f"pip download failed: {e.stderr}. Skipping.")
+        print(f"pip download failed: {e.stderr.decode()}. Skipping.")
         return
     unpacked_dir = PYPI_DEST / "unpacked"
     create_directory(unpacked_dir)
@@ -94,7 +90,6 @@ def download_and_unpack_pypi():
     shutil.rmtree(unpacked_dir)
     print(f"Collected {file_count} PyPI .py files.")
 
-
 def generate_synthetic_non_halting():
     create_directory(SYNTHETIC_DEST)
     for i in range(NUM_SYNTHETIC):
@@ -123,8 +118,6 @@ def setup_complex():
 
 def run_benchmark(force_rebuild=False):
     """Builds the corpus if needed, then runs the analyzer and calculates the score."""
-    
-    # --- Phase 1: Build the corpus (with caching) ---
     if force_rebuild and BENCHMARK_DIR.exists():
         print("--- Force-rebuilding corpus: Deleting existing suite... ---")
         shutil.rmtree(BENCHMARK_DIR)
@@ -141,7 +134,6 @@ def run_benchmark(force_rebuild=False):
         print("--- Phase 1: Found existing benchmark suite. Skipping build. ---")
         print("(Use --rebuild flag to force a fresh build)")
     
-    # --- Phase 2: Run analysis and calculate score ---
     print("\n--- Phase 2: Running Analyzer & Calculating Score ---")
     total_files = 0
     correct_predictions = 0
@@ -167,7 +159,7 @@ def run_benchmark(force_rebuild=False):
             
             try:
                 program_code = file_path.read_text(encoding='utf-8', errors='ignore')
-                analyzer_result = analyze_halting(program_code)
+                analyzer_result, _ = analyze_halting(program_code) # Unpack and ignore reason
                 
                 is_correct = False
                 if name == "halting":
@@ -185,7 +177,6 @@ def run_benchmark(force_rebuild=False):
 
             except Exception:
                 print(" " * len(progress), end='\r')
-                # Silently fail on individual analysis errors, but count as incorrect
                 pass
         
         print(" " * 80, end='\r')
@@ -193,13 +184,11 @@ def run_benchmark(force_rebuild=False):
     sys.stderr.close()
     sys.stderr = original_stderr
 
-    # --- Final Score ---
     if total_files > 0:
         percentage = (correct_predictions / total_files) * 100
         print(f"\n--- Practical Success Rate: {percentage:.2f}% ({correct_predictions} of {total_files} files passed) ---")
     else:
         print("\nNo files were found in the benchmark suite to analyze.")
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the Halting Analyzer benchmark.")

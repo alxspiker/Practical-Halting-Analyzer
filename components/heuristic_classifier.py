@@ -151,11 +151,10 @@ class AckermannVisitor(ast.NodeVisitor):
                 isinstance(node.comparators[0], ast.Constant) and node.comparators[0].value == val)
 
 
-def classify_known_problems(program: str) -> str:
+def classify_known_problems(program: str) -> tuple[str, str]:
     """
     Phase 1.5: Heuristically check for known hard problems.
-    If a known pattern is found, we classify it as impossible to determine
-    without running it.
+    Returns a tuple of (result, reason).
     """
     try:
         tree = ast.parse(program)
@@ -163,15 +162,15 @@ def classify_known_problems(program: str) -> str:
         collatz_visitor = CollatzVisitor()
         collatz_visitor.visit(tree)
         if collatz_visitor.is_collatz_like:
-            return "impossible to determine"
+            return "impossible to determine", "Heuristic classification: Detected a structure matching the Collatz conjecture."
 
         ackermann_visitor = AckermannVisitor()
         ackermann_visitor.visit(tree)
         if ackermann_visitor.is_ackermann_like:
-            return "impossible to determine"
+            return "impossible to determine", "Heuristic classification: Detected a structure matching the Ackermann function."
             
     except Exception:
         # If parsing or classification fails, defer the decision.
-        return "continue"
+        return "continue", ""
         
-    return "continue"
+    return "continue", ""
