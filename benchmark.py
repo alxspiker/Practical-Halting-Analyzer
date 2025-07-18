@@ -6,6 +6,8 @@ import zipfile
 from pathlib import Path
 import sys
 import argparse
+import multiprocessing
+import time
 
 from main import analyze_halting
 
@@ -113,6 +115,28 @@ def setup_complex():
     create_directory(COMPLEX_DIR)
     print("Note: Add curated complex cases to 'benchmark_suite/complex/'")
 
+def analyze_file(args):
+    file_path, name, expected_result = args
+    original_stderr = sys.stderr
+    sys.stderr = open(os.devnull, 'w')
+    try:
+        program_code = file_path.read_text(encoding='utf-8', errors='ignore')
+        analyzer_result, _ = analyze_halting(program_code)
+        
+        is_correct = False
+        if name == "halting":
+            if analyzer_result == "halts": is_correct = True
+        elif name == "non-halting":
+            if analyzer_result in ["does not halt", "impossible to determine"]: is_correct = True
+        elif name == "complex":
+            if analyzer_result in ["impossible to determine", "does not halt"]: is_correct = True
+        
+        return (is_correct, file_path.name, analyzer_result)
+    except Exception:
+        return (False, file_path.name, "error")
+    finally:
+        sys.stderr.close()
+        sys.stderr = original_stderr
 
 # --- Main Benchmark Execution Logic ---
 
@@ -135,8 +159,10 @@ def run_benchmark(force_rebuild=False):
         print("(Use --rebuild flag to force a fresh build)")
     
     print("\n--- Phase 2: Running Analyzer & Calculating Score ---")
-    total_files = 0
-    correct_predictions = 0
+    overall_total = 0
+    overall_processed = 0
+    overall_mismatches = 0
+    overall_correct = 0
 
     category_map = {
         "halting": (HALTING_DIR, "halts"),
@@ -144,51 +170,101 @@ def run_benchmark(force_rebuild=False):
         "complex": (COMPLEX_DIR, "impossible to determine")
     }
 
-    original_stderr = sys.stderr
-    sys.stderr = open(os.devnull, 'w')
+    # Precompute overall total
+    for name, (category_dir, expected_result) in category_map.items():
+        if category_dir.exists():
+            files_in_category = list(category_dir.rglob("*.py"))
+            overall_total += len(files_in_category)
+
+    start_time = time.time()
+    update_interval = max(1, int(overall_total * 0.001))  # 0.1%
+    last_updated_processed = 0
 
     for name, (category_dir, expected_result) in category_map.items():
         if not category_dir.exists(): continue
-        print(f"\nAnalyzing category: '{name}'...")
+        print(f"\nStarting analysis for category: '{name}'...")
         files_in_category = list(category_dir.rglob("*.py"))
+        cat_total = len(files_in_category)
         
-        for i, file_path in enumerate(files_in_category):
-            total_files += 1
-            progress = f"  ({i + 1}/{len(files_in_category)}) Analyzing {file_path.name}..."
-            print(progress, end='\r')
+        if cat_total == 0: continue
+        
+        args_list = [(file_path, name, expected_result) for file_path in files_in_category]
+        
+        category_processed = 0
+        category_mismatches = 0
+        mismatches = []
+
+        with multiprocessing.Pool() as pool:
+            results = pool.imap_unordered(analyze_file, args_list)
             
-            try:
-                program_code = file_path.read_text(encoding='utf-8', errors='ignore')
-                analyzer_result, _ = analyze_halting(program_code) # Unpack and ignore reason
-                
-                is_correct = False
-                if name == "halting":
-                    if analyzer_result == "halts": is_correct = True
-                elif name == "non-halting":
-                    if analyzer_result in ["does not halt", "impossible to determine"]: is_correct = True
-                elif name == "complex":
-                    if analyzer_result in ["impossible to determine", "does not halt"]: is_correct = True
-                
+            for result in results:
+                is_correct, filename, analyzer_result = result
+                category_processed += 1
+                overall_processed += 1
                 if is_correct:
-                    correct_predictions += 1
+                    overall_correct += 1
                 else:
-                    print(" " * len(progress), end='\r')
-                    print(f"  MISMATCH: {file_path.name} -> Expected '{expected_result}', Got '{analyzer_result}'")
-
-            except Exception:
-                print(" " * len(progress), end='\r')
-                pass
+                    category_mismatches += 1
+                    overall_mismatches += 1
+                    mismatches.append((filename, analyzer_result))
+                
+                # Check if we should update display
+                if (overall_processed - last_updated_processed >= update_interval or 
+                    overall_processed == overall_total or 
+                    category_processed == cat_total):
+                    display_progress(name, expected_result, overall_total, overall_processed, overall_mismatches, start_time,
+                                     cat_total, category_processed, category_mismatches, mismatches)
+                    last_updated_processed = overall_processed
         
-        print(" " * 80, end='\r')
+        # Clear screen after category
+        sys.stdout.write('\033[2J\033[H')
+        sys.stdout.flush()
+        
+        print(f"Completed category '{name}' with {category_mismatches} mismatches.")
+        if mismatches:
+            print("Mismatches:")
+            for filename, analyzer_result in mismatches:
+                print(f"  MISMATCH: {filename} -> Expected '{expected_result}', Got '{analyzer_result}'")
+        else:
+            print("No mismatches.")
     
-    sys.stderr.close()
-    sys.stderr = original_stderr
-
-    if total_files > 0:
-        percentage = (correct_predictions / total_files) * 100
-        print(f"\n--- Practical Success Rate: {percentage:.2f}% ({correct_predictions} of {total_files} files passed) ---")
+    if overall_total > 0:
+        percentage = (overall_correct / overall_total) * 100
+        print(f"\n--- Practical Success Rate: {percentage:.2f}% ({overall_correct} of {overall_total} files passed) ---")
     else:
         print("\nNo files were found in the benchmark suite to analyze.")
+
+def display_progress(category, expected, overall_total, overall_proc, overall_mis, start_time,
+                      cat_total, cat_proc, cat_mis, mis_list):
+    sys.stdout.write('\033[2J\033[H')
+    sys.stdout.flush()
+    
+    elapsed = time.time() - start_time
+    if overall_proc > 0:
+        time_per_file = elapsed / overall_proc
+        eta = time_per_file * (overall_total - overall_proc)
+    else:
+        eta = 0
+    
+    print("Benchmark Analysis Progress")
+    print("----------------------------")
+    print(f"Overall:")
+    print(f"  Processed: {overall_proc}/{overall_total} ({overall_proc/overall_total*100:.1f}%)")
+    print(f"  Mismatches: {overall_mis}")
+    print(f"  Elapsed: {elapsed:.1f}s | ETA: {eta:.1f}s")
+    
+    print(f"\nCurrent Category: {category}")
+    print(f"  Processed: {cat_proc}/{cat_total} ({cat_proc/cat_total*100:.1f}%)")
+    print(f"  Mismatches: {cat_mis}")
+    
+    if mis_list:
+        print("\nRecent Mismatches (last 5):")
+        for filename, analyzer_result in mis_list[-5:]:
+            print(f"  {filename}: Expected '{expected}', Got '{analyzer_result}'")
+    if len(mis_list) > 5:
+        print(f"  ... and {len(mis_list)-5} more")
+
+    sys.stdout.flush()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run the Halting Analyzer benchmark.")

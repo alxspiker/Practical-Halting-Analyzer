@@ -75,6 +75,7 @@ An AST-based pattern matcher that identifies the structural "fingerprints" of kn
 <summary><b>Layer 4: Symbolic Prover</b> (<code>symbolic_prover</code>)</summary>
 
 A more intelligent static phase that uses logical constraints to prove termination for common loop patterns that the basic static analyzer cannot solve. It can prove that loops like `for i in range(10)` or `while x < 10: x += 1` will definitively halt.
+
 </details>
 
 <details>
@@ -92,6 +93,7 @@ The most powerful and resource-intensive phase. It executes the script's code in
 <summary><b>Layer 6: Final Decision Synthesis</b> (<code>decision_synthesis</code>)</summary>
 
 A final safety net. If all other phases were inconclusive, it performs one last check for self-referential calls to the `analyze_halting` function and makes a final judgment based on the combined results of the previous phases.
+
 </details>
 
 ---
@@ -114,9 +116,7 @@ H(P, C) =
       |
       | Trace(P),                         if Trace(P) ≠ "impossible to determine"
       |
-      | "does not halt",                if "analyze_halting" is a substring of P
-      |
-      | "impossible to determine",      otherwise
+      | Synthesis(Static, Prove, Trace, P)
 ```
 <br>
 
@@ -169,12 +169,11 @@ H(P, C) =
 
 </details>
 <details>
-<summary><b>Lines 7 & 8: Final Synthesis & Default Case</b></summary>
+<summary><b>Line 7: Final Synthesis</b> — <code>Synthesis(Static, Prove, Trace, P)</code></summary>
 
 *   **Meaning:** "If all else has failed, what is the safest final answer?"
-*   **Purpose:** This is the final fallback in the `decision_synthesis` phase.
-*   **Line 7 (`"analyze_halting" in P`):** A broad safety check. If a script that eluded all other paradoxical detectors still mentions the analyzer, we assume it is malicious and classify it as `does not halt`.
-*   **Line 8 (otherwise):** The ultimate default. If every single phase—from cycle detection to dynamic tracing—could not produce a definitive `halts` or `does not halt`, the only safe and honest conclusion is `impossible to determine`.
+*   **Purpose:** This is the final fallback in the `decision_synthesis` phase. It combines inconclusive results from prior phases and checks for self-referential patterns.
+*   **Logic:** Prioritizes definitive results from earlier phases. If none, checks for self-reference via AST or substring and classifies as `does not halt` if found; otherwise, `impossible to determine`.
 
 </details>
 
@@ -250,3 +249,5 @@ python benchmark.py --rebuild
 ## Project Philosophy
 
 This project acknowledges that the Halting Problem is theoretically undecidable. The goal is not to achieve impossible perfection but to build a practical tool that demonstrates the power of layered heuristics. By combining static analysis, symbolic logic, dynamic tracing, and advanced meta-defenses, this analyzer successfully pushes the boundary of what can be practically decided, providing correct and safe answers for an overwhelming majority of real-world and adversarial programs.
+
+---

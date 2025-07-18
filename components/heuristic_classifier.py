@@ -1,4 +1,6 @@
+# File: components/heuristic_classifier.py
 import ast
+import difflib
 
 class CollatzVisitor(ast.NodeVisitor):
     """
@@ -150,6 +152,31 @@ class AckermannVisitor(ast.NodeVisitor):
                 isinstance(node.ops[0], op) and
                 isinstance(node.comparators[0], ast.Constant) and node.comparators[0].value == val)
 
+# Known patterns for hard problems
+KNOWN_HARD_PATTERNS = [
+    # Busy Beaver example
+    """
+def busy_beaver():
+    tape = [0] * 100
+    state = 0
+    pos = 0
+    while state != 'halt':
+        # Simulate TM
+        pass
+""",
+    # Turing machine simulation
+    """
+class TuringMachine:
+    def run(self):
+        while True:
+            # state transitions
+            pass
+"""
+]
+
+def is_similar_to_known(code, pattern, threshold=0.8):
+    seq_matcher = difflib.SequenceMatcher(None, code, pattern)
+    return seq_matcher.ratio() > threshold
 
 def classify_known_problems(program: str) -> tuple[str, str]:
     """
@@ -168,6 +195,11 @@ def classify_known_problems(program: str) -> tuple[str, str]:
         ackermann_visitor.visit(tree)
         if ackermann_visitor.is_ackermann_like:
             return "impossible to determine", "Heuristic classification: Detected a structure matching the Ackermann function."
+
+        # Check for other known hard patterns using fuzzy matching
+        for pattern in KNOWN_HARD_PATTERNS:
+            if is_similar_to_known(program, pattern):
+                return "impossible to determine", "Heuristic classification: Detected a structure similar to a known undecidable problem (e.g., Busy Beaver or Turing machine)."
             
     except Exception:
         # If parsing or classification fails, defer the decision.

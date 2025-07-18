@@ -1,6 +1,9 @@
+# File: components/dynamic_tracing.py
 import sys
 import re
+import ast
 from collections import defaultdict
+import hashlib
 
 def dynamic_tracing(program: str) -> tuple[str, str]:
     """
@@ -8,29 +11,39 @@ def dynamic_tracing(program: str) -> tuple[str, str]:
     Returns a tuple of (result, reason).
     """
     try:
-        if re.search(r"analyze_halting\s*\(", program):
-            return "does not halt", "Dynamic tracing: Pre-execution check found a probable call to the analyzer."
+        # Obfuscation-resistant analyzer call detection using AST
+        tree = ast.parse(program)
+        has_analyzer_call = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == 'analyze_halting':
+                has_analyzer_call = True
+                break
+        if has_analyzer_call:
+            return "does not halt", "Dynamic tracing: Pre-execution check found a call to the analyzer."
 
         trace_log = []
         call_depth = defaultdict(int)
+        state_hashes = []
 
         def trace(frame, event, arg):
             if event == "call":
                 call_depth[frame.f_code.co_name] += 1
-                if call_depth[frame.f_code.co_name] > 100:
+                if call_depth[frame.f_code.co_name] > 200:  # Increased limit
                     raise RecursionError("Deep recursion detected")
             if event == "line":
                 line_no = frame.f_lineno
                 local_vars_tuple = tuple(sorted(frame.f_locals.items()))
-                trace_log.append((line_no, local_vars_tuple))
+                state = (line_no, local_vars_tuple)
+                state_hash = hashlib.sha256(str(state).encode()).hexdigest()
+                trace_log.append(state_hash)
 
-            if len(trace_log) > 1 and len(trace_log) % 2 == 0:
-                half = len(trace_log) // 2
-                if trace_log[:half] == trace_log[half:]:
-                    raise RuntimeError("Cycle detected in execution trace")
-
-            if len(trace_log) > 10000:
+            if len(trace_log) > 20000:  # Increased limit
                 raise RuntimeError("Trace log exceeded maximum size")
+
+            # Cycle detection with hashes
+            if state_hash in state_hashes:
+                raise RuntimeError("Cycle detected in execution trace")
+            state_hashes.append(state_hash)
 
             return trace
 

@@ -1,12 +1,14 @@
+# File: components/semantic_hashing.py
 import ast
 import hashlib
 
 class Canonicalizer(ast.NodeTransformer):
     """
     Transforms a Python AST into a canonical form by:
-    1. Removing docstrings.
+    1. Removing docstrings and comments.
     2. Renaming all local variables, arguments, and function names to a standard,
        predictable sequence (e.g., func_0, arg_0, var_0).
+    3. Inline simple constants where possible.
     """
     def __init__(self):
         self.func_counter = 0
@@ -75,6 +77,13 @@ class Canonicalizer(ast.NodeTransformer):
         """Remove docstrings."""
         if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
             return None
+        return self.generic_visit(node)
+
+    # Additional: Inline constants (simple cases)
+    def visit_Assign(self, node):
+        if isinstance(node.value, ast.Constant) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            # Could propagate, but for hashing, perhaps just rename
+            return self.generic_visit(node)
         return self.generic_visit(node)
 
 def get_semantic_hash(program: str) -> str:

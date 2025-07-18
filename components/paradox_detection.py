@@ -1,4 +1,6 @@
+# File: components/paradox_detection.py
 import ast
+from .semantic_hashing import Canonicalizer
 
 class ParadoxVisitor(ast.NodeVisitor):
     def __init__(self):
@@ -80,8 +82,14 @@ class ParadoxVisitor(ast.NodeVisitor):
 def detect_paradox(program: str) -> bool:
     try:
         tree = ast.parse(program)
+        canonicalizer = Canonicalizer()
+        canonicalizer._enter_scope()
+        canonical_tree = canonicalizer.visit(tree)
+        canonicalizer._exit_scope()
+        ast.fix_missing_locations(canonical_tree)
+        
         visitor = ParadoxVisitor()
-        visitor.visit(tree)
+        visitor.visit(canonical_tree)
         return (visitor.has_sys_os_import and
                 visitor.has_path_adjust and
                 visitor.has_analyzer_import and
