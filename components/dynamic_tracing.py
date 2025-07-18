@@ -34,14 +34,6 @@ def dynamic_tracing(program: str) -> str:
         sys.settrace(trace)
         try:
             exec(program, {})
-        except NameError as e:
-            if "__file__" in str(e):
-                # This is a strong indicator of a self-referential exec failing.
-                sys.settrace(None)
-                return "does not halt"
-            else:
-                sys.settrace(None)
-                return f"impossible to determine: {e}"
         except RecursionError:
             sys.settrace(None)
             return "does not halt"
@@ -51,12 +43,11 @@ def dynamic_tracing(program: str) -> str:
                 return "does not halt"
             else:
                 sys.settrace(None)
-                return f"impossible to determine: {e}"
+                return "halts"  # Or "impossible to determine: {e}" if you prefer caution
         except Exception as e:
             sys.settrace(None)
-            return f"impossible to determine: {e}"
+            return "halts"  # Exceptions terminate execution
         sys.settrace(None)
-
         return "halts"
     except Exception as e:
         return f"impossible to determine: {str(e)}"

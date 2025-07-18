@@ -1,17 +1,43 @@
 import argparse
 import sys
+import hashlib
+from components.paradox_detection import detect_paradox
 from components.static_analysis import static_preparation
 from components.symbolic_analysis import symbolic_analysis
 from components.dynamic_tracing import dynamic_tracing
 from components.decision_synthesis import decision_synthesis
 
+# --- MODIFIED: Import the new cross-script recursion detector ---
+from components.cross_script_recursion import start_analysis, end_analysis, RecursionCycleDetected
+
+# --- REMOVED: The old ANALYSIS_STACK set is no longer needed ---
+# ANALYSIS_STACK = set()
+
 def analyze_halting(program: str) -> str:
     """Analyze if a program halts using a four-phase approach."""
+    program_hash = hashlib.sha256(program.encode('utf-8')).hexdigest()
+
     try:
+        # --- MODIFIED: Use the new chain detector ---
+        # This will check for both direct (A->A) and mutual (A->B->A) recursion.
+        start_analysis(program_hash)
+
+    except RecursionCycleDetected as e:
+        # The new component found a cycle. This is a non-halting condition.
+        print(f"Debug: {str(e)}", file=sys.stderr)
+        return "does not halt"
+
+    try:
+        # The main analysis logic remains wrapped in a try/finally block
+        # to ensure end_analysis is always called.
+        if detect_paradox(program):
+            print("Debug: Detected potential halting paradox", file=sys.stderr)
+            return "impossible to determine: detected potential halting paradox"
+        
         # Phase 1: Static Preparation
         static_result = static_preparation(program)
         print(f"Debug: Static result = {static_result}", file=sys.stderr)
-        if static_result == "definitely halts":
+        if static_result == "halts":
             return "halts"
         if static_result == "does not halt":
             return "does not halt"
@@ -32,9 +58,13 @@ def analyze_halting(program: str) -> str:
         final_result = decision_synthesis(static_result, symbolic_result, dynamic_result, program)
         print(f"Debug: Final result = {final_result}", file=sys.stderr)
         return final_result
+        
     except Exception as e:
         print(f"Debug: Exception = {str(e)}", file=sys.stderr)
         return f"impossible to determine: {str(e)}"
+    finally:
+        # --- MODIFIED: Ensure we call the new end_analysis function ---
+        end_analysis(program_hash)
 
 if __name__ == "__main__":
     import os
