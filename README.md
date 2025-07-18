@@ -71,12 +71,7 @@ To run the analysis on all test scripts, simply execute `main.py` from your term
 python main.py
 ```
 
-The analyzer will process each file in the `/scripts` directory and print the result. Use the provided cleanup scripts to remove any files generated during the tests.
-
-```bash
-# Example cleanup
-python cleanup_prover_test.py
-```
+The analyzer will process each file in the `/scripts` directory and print the result.
 
 ## The Never-Ending Game: Limitations and Philosophy
 
